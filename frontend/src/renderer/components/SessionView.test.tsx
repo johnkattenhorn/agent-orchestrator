@@ -783,6 +783,33 @@ describe("SessionView", () => {
 		expect(screen.queryByText(transition.errorDetail)).not.toBeInTheDocument();
 	});
 
+	it("returns to the source terminal while a failed Chat switch mode refetch settles", () => {
+		const session = workerSession("sess-1");
+		// The workspace cache observed the transition's intermediate mode commit,
+		// but the durable transition already says the target failed and rolled back.
+		session.mode = "chat";
+		const transition = {
+			id: "transition-failed",
+			sessionId: "sess-1",
+			sourceMode: "tui" as const,
+			targetMode: "chat" as const,
+			policy: "drain" as const,
+			phase: "failed" as const,
+			errorCode: "TARGET_HISTORY_UNSETTLED",
+			errorDetail: "The native conversation history did not settle.",
+			createdAt: "2026-08-23T17:00:00Z",
+			updatedAt: "2026-08-23T17:01:00Z",
+			completedAt: "2026-08-23T17:01:00Z",
+		};
+		interfaceTransitionState.status = { supported: true, targetMode: "chat", transition };
+
+		render(<SessionView sessionId="sess-1" />);
+
+		expect(screen.getByText("terminal center")).toBeInTheDocument();
+		expect(screen.queryByTestId("chat-surface")).not.toBeInTheDocument();
+		expect(screen.getByText(transition.errorDetail)).toBeInTheDocument();
+	});
+
 	it.each([
 		["worker", "sess-1"],
 		["orchestrator", "sess-orch"],
@@ -1381,6 +1408,44 @@ describe("SessionView", () => {
 		rerender(<SessionView sessionId="sess-2" />);
 		expect(inspectorButton()).toHaveAttribute("data-view", "summary");
 		expect(browserUnseen("sess-2")).toBe(true);
+	});
+
+	// Regression: the session-entry effect that defaults a brand-new session to
+	// Summary tracked only the single most-recently-initialized session ID, so
+	// re-entering ANY session that was not the immediately preceding one looked
+	// identical to a first-ever visit and forced it back to Summary — silently
+	// discarding whatever tab (Files, Browser) the user had left it on.
+	it("remembers the tab a session was left on when returning to it after visiting another session", () => {
+		const { rerender } = render(<SessionView sessionId="sess-1" />);
+		expect(inspectorButton()).toHaveAttribute("data-view", "summary");
+
+		fireEvent.click(screen.getByRole("button", { name: "open files" }));
+		expect(inspectorButton()).toHaveAttribute("data-view", "files");
+
+		rerender(<SessionView sessionId="sess-2" />);
+		expect(inspectorButton()).toHaveAttribute("data-view", "summary");
+
+		rerender(<SessionView sessionId="sess-1" />);
+		expect(inspectorButton()).toHaveAttribute("data-view", "files");
+	});
+
+	// Regression: the "initialized" marker used to live in a component-local
+	// ref, which is recreated whenever SessionView unmounts. Remounting an
+	// already-visited session (e.g. across a route transition) then looked
+	// identical to a first-ever visit and forced the tab back to Summary. The
+	// marker now lives in the ui-store's persisted inspectorSessions state, so
+	// it survives unmount/remount, not just re-renders of one mounted instance.
+	it("remembers the tab a session was left on after unmounting and remounting the view", () => {
+		const view = render(<SessionView sessionId="sess-1" />);
+		expect(inspectorButton()).toHaveAttribute("data-view", "summary");
+
+		fireEvent.click(screen.getByRole("button", { name: "open files" }));
+		expect(inspectorButton()).toHaveAttribute("data-view", "files");
+
+		view.unmount();
+
+		render(<SessionView sessionId="sess-1" />);
+		expect(inspectorButton()).toHaveAttribute("data-view", "files");
 	});
 
 	it("keeps Summary selected when preview content arrives with the async workspace response", () => {

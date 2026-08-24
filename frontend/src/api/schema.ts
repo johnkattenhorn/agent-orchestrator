@@ -1066,6 +1066,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/sessions/{sessionId}/conversation/turns/{turnId}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Re-dispatch a failed turn's durable prompt as a new turn */
+        post: operations["retrySessionConversationTurn"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/sessions/{sessionId}/conversation/turns/{turnId}/rollback": {
         parameters: {
             query?: never;
@@ -2028,7 +2045,7 @@ export interface components {
             /** Format: int64 */
             sequence: number;
             /** @enum {string} */
-            status: "running" | "completed" | "failed" | "cancelled" | "pending" | "resolved";
+            status: "running" | "completed" | "recovered" | "failed" | "cancelled" | "pending" | "resolved";
             summary: string;
             turnId?: string;
         };
@@ -2205,14 +2222,16 @@ export interface components {
             completedAt?: null | string;
             diff?: components["schemas"]["ConversationTurnDiffResponse"];
             errorMessage?: string;
+            hasRetryAttempt?: boolean;
             id: string;
             plan?: components["schemas"]["ConversationPlanResponse"];
             providerTurnId?: string;
             requestedAt: string;
+            retryOfTurnId?: string;
             rolledBack?: boolean;
             startedAt?: null | string;
             /** @enum {string} */
-            state: "queued" | "running" | "completed" | "interrupted" | "failed";
+            state: "queued" | "running" | "completed" | "recovered" | "interrupted" | "failed";
         };
         ConversationTurnSettingsPayload: {
             /** @enum {string} */
@@ -2246,7 +2265,9 @@ export interface components {
         };
         DelegateTaskRequest: {
             /** @enum {string} */
-            agent?: "claude-code" | "codex" | "aider" | "opencode" | "grok" | "droid" | "amp" | "agy" | "crush" | "cursor" | "qwen" | "copilot" | "goose" | "auggie" | "continue" | "devin" | "cline" | "kimi" | "muse" | "kiro" | "kilocode" | "vibe" | "pi" | "kimchi" | "prime-agent" | "autohand" | "fake";
+            agent?: "claude-code" | "codex" | "aider" | "opencode" | "grok" | "droid" | "amp" | "agy" | "crush" | "cursor" | "qwen" | "copilot" | "goose" | "auggie" | "continue" | "devin" | "cline" | "kimi" | "muse" | "kiro" | "kilocode" | "vibe" | "pi" | "kimchi" | "omp" | "prime-agent" | "autohand" | "fake";
+            /** @enum {string} */
+            approvalMode?: "default" | "accept-edits" | "auto" | "bypass-permissions";
             attachments?: components["schemas"]["AttachmentInput"][];
             brief: string;
             /** @enum {string} */
@@ -2303,7 +2324,7 @@ export interface components {
             providerTurnId?: string;
             sourceBranchId: string;
             /** @enum {string} */
-            state?: "queued" | "running" | "completed" | "interrupted" | "failed";
+            state?: "queued" | "running" | "completed" | "recovered" | "interrupted" | "failed";
             turnId?: string;
         };
         ImportReport: {
@@ -2672,6 +2693,12 @@ export interface components {
             session: components["schemas"]["ControllersSessionView"];
             sessionId: string;
         };
+        RetryTurnResponse: {
+            providerTurnId?: string;
+            /** @enum {string} */
+            state?: "queued" | "running" | "completed" | "recovered" | "interrupted" | "failed";
+            turnId?: string;
+        };
         ReviewRun: {
             autoInjectReview: boolean;
             batchId: string;
@@ -2720,7 +2747,7 @@ export interface components {
             duplicate: boolean;
             providerTurnId?: string;
             /** @enum {string} */
-            state?: "queued" | "running" | "completed" | "interrupted" | "failed";
+            state?: "queued" | "running" | "completed" | "recovered" | "interrupted" | "failed";
             turnId?: string;
         };
         SendSessionMessageRequest: {
@@ -3008,7 +3035,7 @@ export interface components {
             branch?: string;
             displayName?: string;
             /** @enum {string} */
-            harness?: "claude-code" | "codex" | "aider" | "opencode" | "grok" | "droid" | "amp" | "agy" | "crush" | "cursor" | "qwen" | "copilot" | "goose" | "auggie" | "continue" | "devin" | "cline" | "kimi" | "muse" | "kiro" | "kilocode" | "vibe" | "pi" | "kimchi" | "prime-agent" | "autohand";
+            harness?: "claude-code" | "codex" | "aider" | "opencode" | "grok" | "droid" | "amp" | "agy" | "crush" | "cursor" | "qwen" | "copilot" | "goose" | "auggie" | "continue" | "devin" | "cline" | "kimi" | "muse" | "kiro" | "kilocode" | "vibe" | "pi" | "kimchi" | "omp" | "prime-agent" | "autohand";
             issueId?: string;
             /** @enum {string} */
             kind?: "worker" | "orchestrator";
@@ -3112,7 +3139,7 @@ export interface components {
         SystemRequirementsResponse: {
             /** @description True iff every requirement with Required=true is satisfied. Requirements with Required=false (e.g. gh) are advisory and never block readiness. */
             ready: boolean;
-            /** @description Individual checks, in stable order: git, tmux, harness, gh. */
+            /** @description Individual checks in stable order for the selected probe. */
             requirements: components["schemas"]["SystemRequirement"][];
         };
         TrackerIntakeConfig: {
@@ -7039,6 +7066,76 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EditConversationMessageResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
+    retrySessionConversationTurn: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Session identifier, e.g. project-1. */
+                sessionId: string;
+                /** @description AO conversation turn identifier, from the snapshot's turns array. */
+                turnId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RetryTurnResponse"];
                 };
             };
             /** @description Bad Request */
