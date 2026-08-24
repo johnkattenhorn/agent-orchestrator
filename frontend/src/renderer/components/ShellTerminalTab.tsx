@@ -107,8 +107,8 @@ export function ShellTerminalTab({
 			className={cn(
 				"group relative min-w-shell-tab-min shrink-0 items-center transition-colors",
 				appearance === "connected"
-					? "grid w-shell-tab-connected grid-cols-[auto_minmax(0,1fr)_auto] self-stretch border-x border-transparent pl-2 pr-0"
-					: "inline-flex gap-1 rounded-md px-2 py-1",
+					? "grid w-shell-tab-connected grid-cols-[auto_minmax(0,1fr)_auto] self-stretch border-x border-transparent"
+					: "inline-flex gap-1 rounded-md",
 				appearance === "connected"
 					? isActive
 						? "border-border-strong bg-overlay text-foreground after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:bg-foreground/80"
@@ -117,17 +117,18 @@ export function ShellTerminalTab({
 						? "bg-interactive-active"
 						: "hover:bg-interactive-hover/60",
 			)}
-			{...containerRenameHandlers}
 		>
-			{appearance === "connected" ? (
-				<SquareTerminal aria-hidden="true" className="mr-1 size-icon-sm shrink-0 translate-y-px" />
+			{appearance === "connected" && isEditing ? (
+				<SquareTerminal aria-hidden="true" className="ml-2 mr-1 size-icon-sm shrink-0 translate-y-px" />
 			) : null}
 			{isEditing ? (
 				<input
 					aria-label={t("terminal.rename", { title: shell.title })}
 					className={cn(
 						"rounded-sm border border-accent bg-background px-1 font-mono text-control font-semibold text-foreground shadow-sm outline-none ring-1 ring-accent",
-						appearance === "connected" ? "min-w-0 w-full text-left" : "min-w-flex-min max-w-shell-tab-max",
+						appearance === "connected"
+							? "col-span-2 min-w-0 w-full pl-2 text-left"
+							: "min-w-flex-min max-w-shell-tab-max px-2 py-1",
 					)}
 					onBlur={commit}
 					onChange={(event) => setDraft(event.target.value)}
@@ -142,6 +143,7 @@ export function ShellTerminalTab({
 					}}
 					ref={inputRef}
 					value={draft}
+					{...containerRenameHandlers}
 				/>
 			) : (
 				<button
@@ -149,11 +151,14 @@ export function ShellTerminalTab({
 					aria-current={isActive}
 					aria-selected={isActive}
 					className={cn(
-						"select-none truncate text-control transition-colors",
-						appearance === "connected" ? "min-w-0 w-full text-left" : "min-w-flex-min max-w-shell-tab-max",
+						"inline-flex select-none items-center truncate text-control transition-colors",
+						appearance === "connected"
+							? "col-span-2 min-w-0 w-full pl-2 text-left"
+							: "min-w-0 max-w-shell-tab-max flex-1 px-2 py-1 text-left",
 						appearance === "connected" ? "font-normal" : "font-mono font-semibold",
 						isActive ? "text-foreground" : "text-passive group-hover:text-foreground",
 					)}
+					{...containerRenameHandlers}
 					role="tab"
 					tabIndex={isActive ? 0 : -1}
 					title={
@@ -165,6 +170,9 @@ export function ShellTerminalTab({
 					}
 					type="button"
 				>
+					{appearance === "connected" ? (
+						<SquareTerminal aria-hidden="true" className="mr-1 size-icon-sm shrink-0 translate-y-px" />
+					) : null}
 					{shell.title}
 				</button>
 			)}
@@ -172,7 +180,7 @@ export function ShellTerminalTab({
 				aria-label={t("terminal.closeNamed", { title: shell.title })}
 				data-terminal-tab-action
 				className={cn(
-					"inline-flex h-control-sm shrink-0 items-center justify-center overflow-hidden rounded-sm text-passive transition-[width,margin,background,color,opacity] hover:bg-interactive-hover hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent/50",
+					"inline-flex h-control-sm shrink-0 items-center justify-center overflow-hidden rounded-sm text-passive transition-[width,margin,color,opacity] hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent/50",
 					appearance === "connected"
 						? isActive
 							? "ml-1 mr-1 w-control-sm opacity-100"

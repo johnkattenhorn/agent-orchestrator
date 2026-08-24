@@ -83,10 +83,17 @@ describe("ShellTerminalTab rename", () => {
 		expect(onSelect).toHaveBeenCalled();
 	});
 
-	it("selects from the full connected pill, not only its title", () => {
+	it("uses the connected tab container as the tab button", () => {
 		const { onSelect } = renderTab({ appearance: "connected" });
-		fireEvent.click(screen.getByRole("tab", { name: "ao" }).parentElement as HTMLElement);
+		const tab = screen.getByRole("tab", { name: "ao" });
+		fireEvent.click(tab);
 		expect(onSelect).toHaveBeenCalledOnce();
+		expect(tab).toHaveClass("col-span-2", "w-full");
+	});
+
+	it("keeps the close affordance free of a background hover", () => {
+		renderTab({ appearance: "connected", isActive: true });
+		expect(screen.getByRole("button", { name: "Close terminal ao" })).not.toHaveClass("hover:bg-interactive-hover");
 	});
 
 	it("keeps the close affordance visible on an active connected tab", () => {

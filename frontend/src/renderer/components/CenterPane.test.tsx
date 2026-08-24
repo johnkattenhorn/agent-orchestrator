@@ -788,7 +788,7 @@ describe("CenterPane toolbar session label", () => {
 		expect(terminalRegion).not.toContainElement(screen.getByTestId("session-action-region"));
 		const actionRegion = screen.getByTestId("session-action-region");
 		expect(actionRegion).not.toHaveClass("border-l");
-		expect(actionRegion).toHaveClass("gap-2");
+		expect(actionRegion).toHaveClass("gap-1");
 		expect(actionRegion).toContainElement(
 			screen.getByRole("button", { name: "Session action" }),
 		);

@@ -1145,7 +1145,7 @@ function ChatHeader({
 						))}
 					</div>
 				</div>
-				<div className="ml-auto flex shrink-0 items-center gap-1 px-3" data-testid="session-action-region">
+				<div className="ml-auto flex shrink-0 items-center gap-1 px-1" data-testid="session-action-region">
 					{switchAgentControl}
 					{headerActions}
 				</div>
