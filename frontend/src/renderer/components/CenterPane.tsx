@@ -602,7 +602,7 @@ export function CenterPane({
 				</div>
 				{isFullscreen ? null : (
 					<div
-						className="ml-auto flex shrink-0 items-center px-3"
+						className="ml-auto flex shrink-0 items-center gap-2 px-3"
 			data-testid="session-action-region"
 		>
 			{session ? (

@@ -1088,7 +1088,7 @@ describe("SessionView", () => {
 		}
 	});
 
-	it("keeps inspector labels expanded at the default width throughout the opening transition", () => {
+	it("leaves inspector labels visually hidden throughout the opening transition", () => {
 		vi.useFakeTimers();
 		try {
 			act(() => useUiStore.getState().setInspectorOpen("sess-1", false));
@@ -1098,11 +1098,11 @@ describe("SessionView", () => {
 
 			const split = screen.getByTestId("panel-group");
 			expect(split).toHaveAttribute("data-terminal-live-resize", "true");
-			expect(split).toHaveAttribute("data-inspector-label-mode", "expanded");
+			expect(split).not.toHaveAttribute("data-inspector-label-mode");
 			expect(split).toHaveAttribute("data-topbar-secondary-label-mode", "compact");
 
 			act(() => vi.advanceTimersByTime(399));
-			expect(split).toHaveAttribute("data-inspector-label-mode", "expanded");
+			expect(split).not.toHaveAttribute("data-inspector-label-mode");
 			expect(split).toHaveAttribute("data-topbar-secondary-label-mode", "compact");
 
 			act(() => vi.advanceTimersByTime(1));
@@ -1113,7 +1113,7 @@ describe("SessionView", () => {
 		}
 	});
 
-	it("locks responsive inspector labels compact when the opening target is narrow", () => {
+	it("does not add an inspector label layout override at narrow widths", () => {
 		vi.useFakeTimers();
 		const clientWidth = vi
 			.spyOn(HTMLElement.prototype, "clientWidth", "get")
@@ -1127,7 +1127,7 @@ describe("SessionView", () => {
 			act(() => useUiStore.getState().setInspectorOpen("sess-1", true));
 
 			const split = screen.getByTestId("panel-group");
-			expect(split).toHaveAttribute("data-inspector-label-mode", "compact");
+			expect(split).not.toHaveAttribute("data-inspector-label-mode");
 			expect(split).toHaveAttribute("data-topbar-secondary-label-mode", "compact");
 		} finally {
 			clientWidth.mockRestore();

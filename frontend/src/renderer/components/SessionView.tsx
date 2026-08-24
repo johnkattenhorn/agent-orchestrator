@@ -61,10 +61,6 @@ const INSPECTOR_DEFAULT_PX = 360;
 const INSPECTOR_MIN_PX = 280;
 const INSPECTOR_MAX_PERCENT = 50;
 const INSPECTOR_SEPARATOR_RESERVE_PX = 8;
-// The inspector tab labels respond to the tablist's remaining width. The
-// 239px tablist breakpoint plus the 76px pinned-action reserve and 10px leading
-// inset gives a 325px inspector breakpoint for the animation lock.
-const INSPECTOR_COMPACT_MAX_PX = 325;
 const TOPBAR_SECONDARY_COMPACT_MAX_PX = 759;
 const inspectorWidthStorageKey = "ao.inspector.widthPx";
 const inspectorWidthVar = "--ao-inspector-w";
@@ -272,22 +268,19 @@ export function SessionView({ sessionId }: SessionViewProps) {
 			terminalLiveResizeTimerRef.current = null;
 		}
 		sessionSplitRef.current?.removeAttribute("data-terminal-live-resize");
-		sessionSplitRef.current?.removeAttribute("data-inspector-label-mode");
 		sessionSplitRef.current?.removeAttribute("data-topbar-secondary-label-mode");
 	}, []);
 	const startTerminalLiveResize = useCallback(
-		(labelMode: "compact" | "expanded", topbarLabelMode: "compact" | "expanded") => {
+		(topbarLabelMode: "compact" | "expanded") => {
 			const split = sessionSplitRef.current;
 			if (!split) return;
 			if (terminalLiveResizeTimerRef.current !== null) {
 				window.clearTimeout(terminalLiveResizeTimerRef.current);
 			}
 			split.setAttribute("data-terminal-live-resize", "true");
-			split.setAttribute("data-inspector-label-mode", labelMode);
 			split.setAttribute("data-topbar-secondary-label-mode", topbarLabelMode);
 			terminalLiveResizeTimerRef.current = window.setTimeout(() => {
 				split.removeAttribute("data-terminal-live-resize");
-				split.removeAttribute("data-inspector-label-mode");
 				split.removeAttribute("data-topbar-secondary-label-mode");
 				terminalLiveResizeTimerRef.current = null;
 			}, INSPECTOR_SPRING_MS);
@@ -796,14 +789,11 @@ export function SessionView({ sessionId }: SessionViewProps) {
 			const groupWidth = sessionSplitRef.current?.clientWidth || window.innerWidth;
 			const availableWidth = Math.max(0, groupWidth - INSPECTOR_SEPARATOR_RESERVE_PX);
 			const targetInspectorWidth = Number.parseFloat(initialInspectorSize(availableWidth));
-			startTerminalLiveResize(
-				targetInspectorWidth <= INSPECTOR_COMPACT_MAX_PX ? "compact" : "expanded",
-				topbarSecondaryLabelMode(Math.max(0, availableWidth - targetInspectorWidth)),
-			);
+			startTerminalLiveResize(topbarSecondaryLabelMode(Math.max(0, availableWidth - targetInspectorWidth)));
 			return;
 		}
 		const groupWidth = sessionSplitRef.current?.clientWidth || window.innerWidth;
-		startTerminalLiveResize("expanded", topbarSecondaryLabelMode(groupWidth));
+		startTerminalLiveResize(topbarSecondaryLabelMode(groupWidth));
 	}, [hasInspector, isInspectorOpen, startTerminalLiveResize]);
 	useEffect(() => {
 		if (!hasInspector) {
