@@ -223,7 +223,11 @@ func (s *Service) OpenShellTerminal(ctx context.Context, in OpenShellTerminalInp
 	if err != nil {
 		return ShellTerminal{}, err
 	}
-	argv := resolveUserLoginShell()
+	argv, usedFallback := resolveUserLoginShell(in.Shell)
+	if usedFallback {
+		s.log.Warn("requested shell terminal executable was unavailable; using automatic Windows shell resolution",
+			"shell", in.Shell)
+	}
 	if len(argv) == 0 {
 		return ShellTerminal{}, apierr.Internal("SHELL_TERMINAL_NO_SHELL",
 			"Could not determine a shell to launch. Set SHELL (macOS/Linux) or ComSpec (Windows).")
