@@ -3083,7 +3083,7 @@ export interface components {
             projectId: string;
             prompt?: string;
             /** @enum {string} */
-            trackerProvider?: "github" | "gitlab";
+            trackerProvider?: "github" | "gitlab" | "onedev";
         };
         SpawnSessionResponse: {
             promptBytes: number;
@@ -3184,7 +3184,7 @@ export interface components {
             assignee?: string;
             enabled?: boolean;
             /** @enum {string} */
-            provider?: "github" | "gitlab";
+            provider?: "github" | "gitlab" | "onedev";
             repo?: string;
         };
         TriggerReviewRequest: {
