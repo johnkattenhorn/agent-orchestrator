@@ -64,14 +64,18 @@ function TargetIcon({ target, className }: { target?: OpenTarget; className?: st
 export function TopbarOpenEditorButton({
 	sessionId,
 	projectId,
+	sessionCreatedAt,
+	sessionTerminated,
 	style,
 }: {
 	sessionId: string;
 	projectId: string;
+	sessionCreatedAt?: string;
+	sessionTerminated?: boolean;
 	style?: React.CSSProperties;
 }) {
 	const { t } = useTranslation();
-	const stateQuery = useEditorHandoffState(sessionId);
+	const stateQuery = useEditorHandoffState(sessionId, { sessionCreatedAt, sessionTerminated });
 	const open = useOpenSessionTarget();
 	const state = stateQuery.data;
 	const targets = state?.targets ?? [];
@@ -95,9 +99,17 @@ export function TopbarOpenEditorButton({
 		: !stateQuery.isPending && editors.length === 0
 			? t("editor.noEditorGuidance", { fileManager: fileManagerName, terminal: terminalName })
 			: null;
-	const mainLabel = open.isPending ? t("editor.opening") : preferred ? t("editor.open") : t("editor.chooseEditor");
-	const mainTitle = guidance
-		?? (preferred ? t("editor.openWorkspaceInTitle", { name: preferred.name }) : t("editor.chooseEditorTitle"));
+	const mainLabel = stateQuery.isPending
+		? t("editor.preparingWorkspace")
+		: open.isPending
+			? t("editor.opening")
+			: preferred
+				? t("editor.open")
+				: t("editor.chooseEditor");
+	const mainTitle = stateQuery.isPending
+		? t("editor.preparingWorkspace")
+		: (guidance
+			?? (preferred ? t("editor.openWorkspaceInTitle", { name: preferred.name }) : t("editor.chooseEditorTitle")));
 
 	return (
 		<>
@@ -108,7 +120,11 @@ export function TopbarOpenEditorButton({
 			) : null}
 			<div className="inline-flex items-center" style={style}>
 				<TopbarButton
-					aria-label={preferred ? t("editor.openInAria", { name: preferred.name }) : t("editor.chooseEditor")}
+					aria-label={stateQuery.isPending
+						? t("editor.preparingWorkspace")
+						: preferred
+							? t("editor.openInAria", { name: preferred.name })
+							: t("editor.chooseEditor")}
 					data-priority="primary"
 					disabled={mainDisabled}
 					onClick={() => launch()}
