@@ -201,7 +201,7 @@ func (s *Service) EditMessage(
 			SessionID: cfg.SessionID, DataDir: cfg.DataDir, WorkspacePath: cfg.WorkspacePath,
 			Env: cfg.Env, Model: cfg.Model, Permissions: cfg.Permissions,
 			SystemPrompt: cfg.SystemPrompt, AdditionalDirectories: cfg.AdditionalDirectories,
-			MCPServers: cfg.MCPServers,
+			MCPServers: cfg.MCPServers, AllowConcurrentHostReplacement: true,
 		})
 		if err == nil {
 			providerConversationID = provider.ProviderConversationID()
@@ -215,6 +215,7 @@ func (s *Service) EditMessage(
 				DataDir: cfg.DataDir, WorkspacePath: cfg.WorkspacePath, Env: cfg.Env,
 				Model: cfg.Model, Permissions: cfg.Permissions, SystemPrompt: cfg.SystemPrompt,
 				AdditionalDirectories: cfg.AdditionalDirectories, MCPServers: cfg.MCPServers,
+				AllowConcurrentHostReplacement: true,
 			})
 		}
 	}
@@ -332,6 +333,7 @@ func (s *Service) ActivateBranch(ctx context.Context, id domain.SessionID, branc
 		DataDir: cfg.DataDir, WorkspacePath: cfg.WorkspacePath, Env: cfg.Env,
 		Model: cfg.Model, Permissions: cfg.Permissions, SystemPrompt: cfg.SystemPrompt,
 		AdditionalDirectories: cfg.AdditionalDirectories, MCPServers: cfg.MCPServers,
+		AllowConcurrentHostReplacement: true,
 	})
 	if err != nil {
 		return "", fmt.Errorf("resume conversation branch %s: %w", branchID, err)
@@ -342,7 +344,7 @@ func (s *Service) ActivateBranch(ctx context.Context, id domain.SessionID, branc
 	replacement := newController(id, conversation, generation, provider, s.store, s.activity, s.log, s.newID, s.now)
 	if err := s.store.ActivateConversationBranch(ctx, id, conversation.ID, branch.ID,
 		branch.ProviderConversationID, generation, s.now()); err != nil {
-		_ = provider.Close()
+		cleanupUnpublishedConversation(provider, true)
 		return "", err
 	}
 	if err := s.installBranchController(ctx, id, source, replacement, source.conversation.ActiveBranchID); err != nil {
@@ -379,7 +381,7 @@ func (s *Service) installBranchController(
 	s.mu.Lock()
 	if s.controllers[id] != source {
 		s.mu.Unlock()
-		_ = replacement.conv.Close()
+		cleanupUnpublishedConversation(replacement.conv, true)
 		if err := s.store.ActivateConversationBranch(ctx, id, source.conversation.ID,
 			sourceBranchID, source.ProviderConversationID(), source.generation, s.now()); err != nil {
 			return fmt.Errorf("restore source branch after controller swap conflict: %w", err)
@@ -398,7 +400,7 @@ func (s *Service) installBranchController(
 		}
 		s.mu.Unlock()
 	}()
-	if err := source.Close(ctx); err != nil {
+	if err := source.Terminate(ctx); err != nil {
 		s.log.Error("close source controller after branch swap", "session", id, "error", err)
 	}
 	return nil

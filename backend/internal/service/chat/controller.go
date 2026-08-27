@@ -10,8 +10,8 @@
 //     never disagree with the timeline derived from it;
 //   - an event carrying a stale controller generation is dropped, so a controller
 //     that is dying cannot mutate the session that replaced it;
-//   - a turn left in flight when a controller ends settles as failed, because a
-//     controller that stopped running a turn is not evidence the work finished.
+//   - a turn left in flight when its provider ends settles as failed. Deliberate
+//     daemon detach from a persistent provider is not provider termination.
 package chat
 
 import (
@@ -191,6 +191,10 @@ type Controller struct {
 	// idle branch mutation stop dispatch entirely. The target controller is not
 	// started until this controller reports quiescent and is closed.
 	handoff controllerHandoff
+	// preserveProviderOnStop is set before deliberate daemon detach. It prevents
+	// the closing controller from projecting a false provider exit or failing work
+	// that the detached host continues to run.
+	preserveProviderOnStop bool
 
 	// account, threadState and mcpServers are merged here before being written,
 	// because the provider reports each of them in pieces: account/updated carries
@@ -1883,13 +1887,40 @@ func (c *Controller) Rollback(ctx context.Context, turnID string) (int, error) {
 	return discarded, nil
 }
 
-// Close releases the controller. Settling in-flight work is not done here: it
-// happens when the event stream ends, which covers a provider that died on its
-// own as well as a shutdown AO initiated. Close only has to make the stream end
-// and wait for that to finish.
+// Close detaches this daemon's controller. Persistent provider hosts keep the
+// native connection and any in-flight turn alive; non-persistent drivers retain
+// their historical process-close behavior. The persistent host replays detached
+// output and unresolved provider requests to the replacement controller.
 func (c *Controller) Close(ctx context.Context) error {
 	c.once.Do(func() {
+		if preserver, ok := c.conv.(interface{ PreservesProviderOnClose() bool }); ok && preserver.PreservesProviderOnClose() {
+			c.mu.Lock()
+			c.preserveProviderOnStop = true
+			c.mu.Unlock()
+		}
 		c.closeErr = c.conv.Close()
+	})
+	select {
+	case <-c.stopped:
+		return c.closeErr
+	case <-ctx.Done():
+		if c.closeErr != nil {
+			return errors.Join(c.closeErr, ctx.Err())
+		}
+		return ctx.Err()
+	}
+}
+
+// Terminate closes the controller and explicitly destroys a persistent provider
+// host. Daemon shutdown uses Close so the host survives; user/session teardown
+// and controller replacement use Terminate.
+func (c *Controller) Terminate(ctx context.Context) error {
+	c.once.Do(func() {
+		if terminator, ok := c.conv.(interface{ Terminate() error }); ok {
+			c.closeErr = terminator.Terminate()
+		} else {
+			c.closeErr = c.conv.Close()
+		}
 	})
 	select {
 	case <-c.stopped:
@@ -1906,7 +1937,8 @@ func (c *Controller) Close(ctx context.Context) error {
 func (c *Controller) Wait() { <-c.stopped }
 
 // project consumes the driver's normalized events and writes them down. It runs
-// until the driver's stream closes, which happens when the provider process ends.
+// until this controller's stream closes. That can mean provider termination or a
+// deliberate detach from a provider that remains alive in a persistent host.
 func (c *Controller) project() {
 	defer close(c.stopped)
 
@@ -1915,6 +1947,12 @@ func (c *Controller) project() {
 	ctx := context.WithoutCancel(context.Background())
 
 	for event := range c.conv.Events() {
+		c.mu.Lock()
+		preserveProvider := c.preserveProviderOnStop
+		c.mu.Unlock()
+		if preserveProvider && event.Kind == ports.ChatEventControllerState && event.ControllerState == ports.ChatControllerStopped {
+			continue
+		}
 		// A lifecycle event and a concurrent Send must agree on whether the root
 		// conversation is busy. Holding the same lock Send/dispatch use closes the
 		// window between the durable projection and the in-memory ownership update.
@@ -1939,7 +1977,11 @@ func (c *Controller) project() {
 
 	c.mu.Lock()
 	c.state = ports.ChatControllerStopped
+	preserveProvider := c.preserveProviderOnStop
 	c.mu.Unlock()
+	if preserveProvider {
+		return
+	}
 
 	// The stream has ended, so nothing more can arrive for this controller. This
 	// is the only place that reliably knows that — a provider process can die on

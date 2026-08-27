@@ -371,6 +371,10 @@ func (s *Service) Start(ctx context.Context, cfg StartConfig) (*Controller, erro
 	if err != nil {
 		return nil, err
 	}
+	liveReconnect := false
+	if reconnected, ok := conv.(interface{ ReconnectedLive() bool }); ok {
+		liveReconnect = reconnected.ReconnectedLive()
+	}
 
 	// Claim the durable fence before the controller starts consuming events. An
 	// older controller's projection transaction compares its generation with this
@@ -380,7 +384,7 @@ func (s *Service) Start(ctx context.Context, cfg StartConfig) (*Controller, erro
 		generation = s.newID()
 	}
 	if err := s.store.ClaimChatControllerGeneration(ctx, cfg.SessionID, generation, s.now()); err != nil {
-		_ = conv.Close()
+		cleanupUnpublishedConversation(conv, cfg.ProviderConversationID == "")
 		return nil, fmt.Errorf("claim chat controller: %w", err)
 	}
 
@@ -393,12 +397,14 @@ func (s *Service) Start(ctx context.Context, cfg StartConfig) (*Controller, erro
 	// behind a controller that no longer existed. Nothing would ever have corrected
 	// it. Settling here covers every way a controller can come up, and is a no-op
 	// for a session that has none of it.
-	s.settleOrphanedWork(ctx, cfg.SessionID, conversation.ID)
+	if !liveReconnect {
+		s.settleOrphanedWork(ctx, cfg.SessionID, conversation.ID)
+	}
 	// A fresh generation per launch, so events from the controller this one
 	// replaced can be told apart from the current one's.
 	controller := newController(
 		cfg.SessionID, conversation, generation, conv, s.store, s.activity, s.log, s.newID, s.now)
-	if cfg.ProviderConversationID != "" && !cfg.SkipNativeHistoryImport {
+	if cfg.ProviderConversationID != "" && !cfg.SkipNativeHistoryImport && !liveReconnect {
 		// The provider's native thread is the continuity authority across TUI and
 		// Chat. Import it before the live projector starts so the first notification
 		// cannot appear ahead of the older prompt, tool work, and answer it follows.
@@ -412,7 +418,7 @@ func (s *Service) Start(ctx context.Context, cfg StartConfig) (*Controller, erro
 		if s.reader != nil {
 			existing, err = s.reader.LoadConversationSnapshot(ctx, conversation.ID)
 			if err != nil {
-				_ = conv.Close()
+				cleanupUnpublishedConversation(conv, false)
 				return nil, fmt.Errorf("load conversation before native history import: %w", err)
 			}
 		}
@@ -425,13 +431,13 @@ func (s *Service) Start(ctx context.Context, cfg StartConfig) (*Controller, erro
 			ctx, existing.Turns, existing.Messages, existing.Activities,
 			cfg.RequireNativeHistory, replayCheckpoint,
 		); err != nil {
-			_ = conv.Close()
+			cleanupUnpublishedConversation(conv, false)
 			return nil, err
 		}
 	}
 	commit, err := notifyControllerReady(cfg, controller)
 	if err != nil {
-		_ = conv.Close()
+		cleanupUnpublishedConversation(conv, cfg.ProviderConversationID == "")
 		return nil, err
 	}
 	if commit.Conversation.ID != "" {
@@ -463,6 +469,20 @@ func (s *Service) Start(ctx context.Context, cfg StartConfig) (*Controller, erro
 	}()
 
 	return controller, nil
+}
+
+// cleanupUnpublishedConversation rolls back a provider opened before its AO
+// controller was published. A fresh thread has no durable resume handle and must
+// be destroyed; a resumed thread is detached so a transient AO persistence or
+// import failure cannot interrupt provider work that was already in flight.
+func cleanupUnpublishedConversation(conv ports.ChatConversation, fresh bool) {
+	if fresh {
+		if terminator, ok := conv.(interface{ Terminate() error }); ok {
+			_ = terminator.Terminate()
+			return
+		}
+	}
+	_ = conv.Close()
 }
 
 // Controller returns a session's live controller.
@@ -632,7 +652,7 @@ func (s *Service) Stop(ctx context.Context, id domain.SessionID) error {
 		s.mu.Unlock()
 		return nil
 	}
-	err := controller.Close(ctx)
+	err := controller.Terminate(ctx)
 
 	// Keep the only handle to a controller whose event stream has not ended. A
 	// caller can then retry the idempotent close rather than assuming a timeout
