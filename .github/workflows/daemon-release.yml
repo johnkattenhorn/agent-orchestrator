@@ -1,0 +1,95 @@
+name: Daemon release
+
+# Fork-local. Publishes the AO daemon binary so machines running this fork can
+# install it without hand-patching an extracted AppImage.
+#
+# Deliberately scoped to the Go daemon only. Every change this fork carries
+# (OneDev SCM provider, OneDev tracker, intake wiring, doctor section) lives in
+# backend/; the Electron shell is untouched upstream code. Rebuilding all four
+# desktop platforms to ship one Go binary would cost a great deal of CI time for
+# no benefit — the install step swaps resources/daemon/ao inside the existing
+# app.
+#
+# This workflow is not intended for upstream. Keep it out of any PR raised
+# against Untrivial-ai/agent-orchestrator.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - ".github/workflows/daemon-release.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: daemon-release
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          # Track go.mod so this cannot drift from the module's own requirement.
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      - name: Verify the fork's own packages
+        working-directory: backend
+        run: |
+          go vet ./internal/adapters/scm/onedev/... \
+                 ./internal/adapters/tracker/onedev/... \
+                 ./internal/daemon/... ./internal/config/... ./internal/cli/...
+          go test ./internal/adapters/scm/onedev/... \
+                  ./internal/adapters/tracker/onedev/... \
+                  ./internal/daemon/... ./internal/config/... ./internal/cli/...
+
+      - name: Build the daemon
+        working-directory: backend
+        env:
+          CGO_ENABLED: "0"
+          GOOS: linux
+          GOARCH: amd64
+        run: |
+          mkdir -p ../dist
+          go build -trimpath -o ../dist/ao ./cmd/ao
+          ../dist/ao --version || true
+
+      - name: Record provenance
+        run: |
+          cd dist
+          sha256sum ao > ao.sha256
+          {
+            echo "commit:   ${GITHUB_SHA}"
+            echo "built:    $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "go:       $(go version | awk '{print $3}')"
+            echo "upstream: $(git -C .. rev-parse --short upstream/main 2>/dev/null || echo unknown)"
+          } > ao.provenance
+          cat ao.sha256 ao.provenance
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ao-linux-amd64
+          path: dist/
+          retention-days: 30
+
+      # A rolling pre-release so an installer can always fetch the current
+      # daemon by a stable tag, rather than chasing run ids.
+      - name: Publish rolling daemon-latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete daemon-latest --yes --cleanup-tag 2>/dev/null || true
+          gh release create daemon-latest \
+            --prerelease \
+            --title "AO daemon (fork build, linux/amd64)" \
+            --notes "OneDev-capable AO daemon built from ${GITHUB_SHA}. Install with scripts/install-ao-daemon.sh. Not an upstream release." \
+            dist/ao dist/ao.sha256 dist/ao.provenance
